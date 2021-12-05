@@ -15,7 +15,7 @@ contract DigitalAnimals is ERC721Enumerable, Ownable, Signable, ReentrancyGuard,
     using SafeMath for uint256;
     using Counters for Counters.Counter;
     
-    enum Phase { PRE_SALE, MAIN_SALE }
+    enum Phase { NONE, PRE_SALE, MAIN_SALE }
     
     // Constants
     uint256 public constant maxSupply = 8888;
@@ -32,16 +32,22 @@ contract DigitalAnimals is ERC721Enumerable, Ownable, Signable, ReentrancyGuard,
     // Minting by account on different phases
     mapping(address => uint256) public mintedPreSale;
     mapping(address => uint256) public mintedMainSale;
+
+    // Original minter
+    mapping(uint256 => address) public originalMinter;
     
     // Counter
     Counters.Counter private _tokenCount;
+
+    // Flag
+    bool private hasMintedReserved = false;
     
     modifier onlyCreators {
         require(msg.sender == owner() || isCreator(msg.sender));
         _;
     }
     
-    modifier phaseRequred(Phase phase_) {
+    modifier phaseRequired(Phase phase_) {
         require(phase_ == phase(), "Mint not available on current phase");
         _;
     }
@@ -53,7 +59,7 @@ contract DigitalAnimals is ERC721Enumerable, Ownable, Signable, ReentrancyGuard,
         _;
     }
     
-    constructor() ERC721("Didital Aniamls", "DAMLS") {
+    constructor() ERC721("Digitals Aniamls", "DALS") {
         string memory baseTokenURI = "https://digitalanimals.club/animal/"; // TODO: Fix links
         string memory baseContractURI = "https://digitalanimals.club/files/metadata.json"; // TODO: Fix links
 
@@ -68,38 +74,29 @@ contract DigitalAnimals is ERC721Enumerable, Ownable, Signable, ReentrancyGuard,
     function setContractURI(string memory baseContractURI_) public onlyOwner {
         _baseContractURI = baseContractURI_;
     }
-    
-    function mint(uint256 amount) public payable costs(mintPrice * amount) phaseRequred(Phase.MAIN_SALE) lock {
-        require(!Address.isContract(msg.sender), "Address is contract");
-        
+
+    function mintForGifts() public onlyOwner lock { 
+        require(hasMintedReserved == false, "Already minted");
+        uint256 amount = 22;
+
         uint256 total = totalToken();
         require(total + amount <= maxSupply, "Max limit");
-        
-        require(mintedMainSale[msg.sender] + amount <= mainSaleMintPerAccount, "Already minted maximum on main-sale");
-        mintedMainSale[msg.sender] += amount;
-        
+
         for (uint i; i < amount; i++) {
             _tokenCount.increment();
             _safeMint(msg.sender, totalToken());
+            originalMinter[totalToken()] = msg.sender;
         }
+
+        hasMintedReserved = true;
     }
     
-    function mintVerify(uint256 amount, uint256 maxAmount, bytes calldata signature) public payable costs(mintPrice * amount) phaseRequred(Phase.PRE_SALE) lock {
-        require(!Address.isContract(msg.sender), "Address is contract");
-        
-        uint256 total = totalToken();
-        require(total + amount <= maxSupply, "Max limit");
-        
-        require(_verify(signer(), _hash(msg.sender, maxAmount), signature), "Invalid signature");
-        
-        uint256 minted = mintedPreSale[msg.sender];
-        require(minted + amount <= maxAmount, "Already minted maximum on pre-sale");
-        mintedPreSale[msg.sender] = minted + amount;
-        
-        for (uint i; i < amount; i++) {
-            _tokenCount.increment();
-            _safeMint(msg.sender, totalToken());
-        }
+    function mintMainSale(uint256 amount, bytes calldata signature) public payable costs(mintPrice * amount) phaseRequired(Phase.MAIN_SALE) {
+        _mint(amount, mainSaleMintPerAccount, signature, Phase.MAIN_SALE);
+    }
+    
+    function mintPreSale(uint256 amount, uint256 maxAmount, bytes calldata signature) public payable costs(mintPrice * amount) phaseRequired(Phase.PRE_SALE) {
+        _mint(amount, maxAmount, signature, Phase.PRE_SALE);
     }
     
     function setPhase(Phase phase_) public onlyOwner {
@@ -131,6 +128,32 @@ contract DigitalAnimals is ERC721Enumerable, Ownable, Signable, ReentrancyGuard,
     
     function totalToken() public view returns (uint256) {
         return _tokenCount.current();
+    }
+
+    function _mint(uint256 amount, uint256 maxAmount, bytes calldata signature, Phase phase_) private lock {
+        require(!Address.isContract(msg.sender), "Address is contract");
+
+        uint256 total = totalToken();
+        require(total + amount <= maxSupply, "Max limit");
+
+        require(maxAmount <= 3, "You can't mint more than 3 tokens");
+        require(_verify(signer(), _hash(msg.sender, maxAmount), signature), "Invalid signature");
+
+        if (phase_ == Phase.PRE_SALE) {
+            uint256 minted = mintedPreSale[msg.sender];
+            require(minted + amount <= maxAmount, "Already minted maximum on pre-sale");
+            mintedPreSale[msg.sender] = minted + amount;
+        } else {
+            uint256 minted = mintedMainSale[msg.sender];
+            require(minted + amount <= maxAmount, "Already minted maximum on main-sale");
+            mintedMainSale[msg.sender] = minted + amount;
+        }
+        
+        for (uint i; i < amount; i++) {
+            _tokenCount.increment();
+            _safeMint(msg.sender, totalToken());
+            originalMinter[totalToken()] = msg.sender;
+        }
     }
     
     function _baseURI() internal view virtual override returns (string memory) {
