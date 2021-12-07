@@ -2,6 +2,7 @@
 
 pragma solidity ^0.8.0;
 
+import "@chainlink/contracts/src/v0.8/VRFConsumerBase.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
@@ -11,7 +12,7 @@ import "./ReentrancyGuard.sol";
 import "./Creators.sol";
 import "./Signable.sol";
 
-contract DigitalAnimals is ERC721Enumerable, Ownable, Signable, ReentrancyGuard, Creators {
+contract DigitalAnimals is ERC721Enumerable, VRFConsumerBase, Ownable, Signable, ReentrancyGuard, Creators {
     using SafeMath for uint256;
     using Counters for Counters.Counter;
     
@@ -40,7 +41,17 @@ contract DigitalAnimals is ERC721Enumerable, Ownable, Signable, ReentrancyGuard,
     Counters.Counter private _tokenCount;
 
     // Flag
-    bool private hasMintedReserved = false;
+    bool private gotGiftMints = false;
+
+    // Random
+    bool public randomRevealed = false;
+    uint256 public randomValue = 0;
+
+    // TODO: Rinkeby now
+    address private VRFCoodinator = 0xb3dCcb4Cf7a26f6cf6B120Cf5A73875B7BBc655B;
+    address private LINKToken = 0x01BE23585060835E02B77ef475b0Cc51aA1e0709;
+    bytes32 internal keyHash = 0x2ed0feb3e7fd2022120aa84fab1945545a9f2ffc9076fd6156fa96eaff4c1311;
+    uint256 internal fee = 0.1 ether;
     
     modifier onlyCreators {
         require(msg.sender == owner() || isCreator(msg.sender));
@@ -59,7 +70,10 @@ contract DigitalAnimals is ERC721Enumerable, Ownable, Signable, ReentrancyGuard,
         _;
     }
     
-    constructor() ERC721("Digitals Aniamls", "DALS") {
+    constructor() 
+        ERC721("Digitals Aniamls", "DALS")
+        VRFConsumerBase(VRFCoodinator, LINKToken)
+    {
         string memory baseTokenURI = "https://digitalanimals.club/animal/"; // TODO: Fix links
         string memory baseContractURI = "https://digitalanimals.club/files/metadata.json"; // TODO: Fix links
 
@@ -76,7 +90,7 @@ contract DigitalAnimals is ERC721Enumerable, Ownable, Signable, ReentrancyGuard,
     }
 
     function mintForGifts() public onlyOwner lock { 
-        require(hasMintedReserved == false, "Already minted");
+        require(gotGiftMints == false, "Already minted");
         uint256 amount = 22;
 
         uint256 total = totalToken();
@@ -88,7 +102,7 @@ contract DigitalAnimals is ERC721Enumerable, Ownable, Signable, ReentrancyGuard,
             originalMinter[totalToken()] = msg.sender;
         }
 
-        hasMintedReserved = true;
+        gotGiftMints = true;
     }
     
     function mintMainSale(uint256 amount, bytes calldata signature) public payable costs(mintPrice * amount) phaseRequired(Phase.MAIN_SALE) {
@@ -101,6 +115,13 @@ contract DigitalAnimals is ERC721Enumerable, Ownable, Signable, ReentrancyGuard,
     
     function setPhase(Phase phase_) public onlyOwner {
         _phase = phase_;
+    }
+
+    function reveal() public onlyCreators lock returns (bytes32 requestId) {
+        require(!randomRevealed, "Chainlink VRF already requested");
+        require(LINK.balanceOf(address(this)) >= fee, "Not enough LINK - fill contract with faucet");
+        randomRevealed = true;
+        return requestRandomness(keyHash, fee);
     }
     
     function withdrawAll() public onlyCreators {
@@ -125,9 +146,59 @@ contract DigitalAnimals is ERC721Enumerable, Ownable, Signable, ReentrancyGuard,
     function contractURI() public view returns (string memory) {
         return _baseContractURI;
     }
+
+    function tokenURI(uint256 tokenId)
+        public
+        view
+        override(ERC721)
+        returns (string memory)
+    {
+        require(tokenId > 0 && tokenId < totalSupply(), "Token not exist.");
+        return string(abi.encodePacked(_baseURI(), metadataOf(tokenId)));
+    }
+
+    function depricatedMetadataOf(uint256 tokenId) public view returns (string memory) {
+        if (randomValue == 0) {
+            return "hidden";
+        }
+
+        uint256[] memory metadata = new uint256[](maxSupply);
+        for (uint256 i = 0; i < maxSupply; i += 1) {
+            metadata[i] = i;
+        }
+
+        for (uint256 i = 0; i < maxSupply; i += 1) {
+            uint256 j = (uint256(keccak256(abi.encode(randomValue, i))) % (maxSupply));
+            (metadata[i], metadata[j]) = (metadata[j], metadata[i]);
+        }
+
+        return Strings.toString(metadata[tokenId]);
+    }
+
+    function metadataOf(uint256 tokenId) public view returns (string memory) {
+        if (randomValue == 0) {
+            return "hidden";
+        }
+
+        uint256 shift = randomValue % maxSupply;
+        uint256 newId = tokenId + shift;
+        if (newId > maxSupply) {
+            newId = newId - maxSupply;
+        }
+
+        return Strings.toString(newId);
+    }
     
     function totalToken() public view returns (uint256) {
         return _tokenCount.current();
+    }
+
+    function fulfillRandomness(bytes32 requestId, uint256 randomness) internal override {
+        if (randomness == 0) {
+            randomValue = 1;
+        } else {
+            randomValue = randomness;
+        }
     }
 
     function _mint(uint256 amount, uint256 maxAmount, bytes calldata signature, Phase phase_) private lock {
