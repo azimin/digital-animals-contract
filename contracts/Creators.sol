@@ -12,6 +12,7 @@ abstract contract Creators {
     address internal constant creator7 = 0x0000000000002000000000002000000000000000;
     address internal constant creator8 = 0x0000000000002000000000002000000000000000;
     address internal constant creator9 = 0x0000000000000222222222220000000000000000;
+    address internal constant creator10 = 0x0000000000000000000000000000000000000000;
     
     function isCreator(address operator) public pure virtual returns (bool) {
         return operator == creator1 ||
@@ -22,6 +23,7 @@ abstract contract Creators {
             operator == creator6 ||
             operator == creator7 ||
             operator == creator8 ||
-            operator == creator9;
+            operator == creator9 ||
+            operator == creator10;
     }
 }

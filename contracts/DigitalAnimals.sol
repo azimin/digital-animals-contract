@@ -80,6 +80,10 @@ contract DigitalAnimals is ERC721Enumerable, VRFConsumerBase, Ownable, Signable,
         _baseTokenURI = baseTokenURI;
         _baseContractURI = baseContractURI;
     }
+
+    receive() external payable { }
+
+    fallback() external payable { }
     
     function setBaseURI(string memory baseURI_) public onlyOwner {
         _baseTokenURI = baseURI_;
@@ -130,13 +134,14 @@ contract DigitalAnimals is ERC721Enumerable, VRFConsumerBase, Ownable, Signable,
         
         _widthdraw(creator1, balance.mul(3).div(100));
         _widthdraw(creator2, balance.mul(3).div(100));
-        _widthdraw(creator3, balance.mul(3).div(200));
-        _widthdraw(creator4, balance.mul(6).div(100));
-        _widthdraw(creator5, balance.mul(20).div(100));
+        _widthdraw(creator3, balance.mul(3).div(100));
+        _widthdraw(creator4, balance.mul(3).div(200));
+        _widthdraw(creator5, balance.mul(6).div(100));
         _widthdraw(creator6, balance.mul(20).div(100));
         _widthdraw(creator7, balance.mul(20).div(100));
         _widthdraw(creator8, balance.mul(20).div(100));
-        _widthdraw(creator9, address(this).balance);
+        _widthdraw(creator9, balance.mul(20).div(100));
+        _widthdraw(creator10, address(this).balance);
     }
     
     function phase() public view returns (Phase) {
@@ -153,40 +158,8 @@ contract DigitalAnimals is ERC721Enumerable, VRFConsumerBase, Ownable, Signable,
         override(ERC721)
         returns (string memory)
     {
-        require(tokenId > 0 && tokenId < totalSupply(), "Token not exist.");
+        require(tokenId > 0 && tokenId <= totalSupply(), "Token not exist.");
         return string(abi.encodePacked(_baseURI(), metadataOf(tokenId)));
-    }
-
-    function depricatedMetadataOf(uint256 tokenId) public view returns (string memory) {
-        if (randomValue == 0) {
-            return "hidden";
-        }
-
-        uint256[] memory metadata = new uint256[](maxSupply);
-        for (uint256 i = 0; i < maxSupply; i += 1) {
-            metadata[i] = i;
-        }
-
-        for (uint256 i = 0; i < maxSupply; i += 1) {
-            uint256 j = (uint256(keccak256(abi.encode(randomValue, i))) % (maxSupply));
-            (metadata[i], metadata[j]) = (metadata[j], metadata[i]);
-        }
-
-        return Strings.toString(metadata[tokenId]);
-    }
-
-    function metadataOf(uint256 tokenId) public view returns (string memory) {
-        if (randomValue == 0) {
-            return "hidden";
-        }
-
-        uint256 shift = randomValue % maxSupply;
-        uint256 newId = tokenId + shift;
-        if (newId > maxSupply) {
-            newId = newId - maxSupply;
-        }
-
-        return Strings.toString(newId);
     }
     
     function totalToken() public view returns (uint256) {
@@ -230,7 +203,39 @@ contract DigitalAnimals is ERC721Enumerable, VRFConsumerBase, Ownable, Signable,
     function _baseURI() internal view virtual override returns (string memory) {
         return _baseTokenURI;
     }
-    
+
+    function depricatedMetadataOf(uint256 tokenId) private view returns (string memory) {
+        if (randomValue == 0) {
+            return "hidden";
+        }
+
+        uint256[] memory metadata = new uint256[](maxSupply);
+        for (uint256 i = 0; i < maxSupply; i += 1) {
+            metadata[i] = i;
+        }
+
+        for (uint256 i = 0; i < maxSupply; i += 1) {
+            uint256 j = (uint256(keccak256(abi.encode(randomValue, i))) % (maxSupply));
+            (metadata[i], metadata[j]) = (metadata[j], metadata[i]);
+        }
+
+        return Strings.toString(metadata[tokenId]);
+    }
+
+    function metadataOf(uint256 tokenId) private view returns (string memory) {
+        if (randomValue == 0) {
+            return "hidden";
+        }
+
+        uint256 shift = randomValue % maxSupply;
+        uint256 newId = tokenId + shift;
+        if (newId > maxSupply) {
+            newId = newId - maxSupply;
+        }
+
+        return Strings.toString(newId);
+    }
+
     function _widthdraw(address _address, uint256 _amount) private {
         (bool success, ) = _address.call{value: _amount}("");
         require(success, "Widthdraw failed");
